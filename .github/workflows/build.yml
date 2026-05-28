@@ -11,8 +11,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      CURL: "curl -fsSL --retry 3 --retry-delay 2"
     steps:
       - name: Checkout vmeboost-geosite
         uses: actions/checkout@v4
@@ -46,26 +44,10 @@ jobs:
           mkdir -p community/data
           cp -a upstream/data/. community/data/
 
-          # Удаляем банковские домены из whitelist
-          grep -vE \
-            'alfa.?bank|alfabank|alfafinance|alfaleasing|alfaprivate|alfafx|alfafuture|investalfa|alformacap|'\
-'baltbank|beta.?bank|banka.?ui|bankline|banki\.ru|'\
-'cdn.?tinkoff|tbank.?online|'\
-'credistory|dbankcloud|dbo.?dengi|'\
-'finuslugi|'\
-'gazprombank|gazprompay|gpb\.ru|gpmdi\.ru|sbpgpb|'\
-'gorodpay|mirpayonline|'\
-'moex\.com|'\
-'myapelsin|'\
-'nbki\.ru|nspk\.ru|'\
-'psbank|psblog|'\
-'rshb\.ru|'\
-'sistema.?capital|spvb\.ru|'\
-'tochka\.com|tochka.?tech|'\
-'vtb' \
+          grep -vE 'alfa.?bank|alfabank|alfafinance|alfaleasing|alfaprivate|alfafx|alfafuture|investalfa|alformacap|baltbank|beta.?bank|banka.?ui|bankline|banki\.ru|cdn.?tinkoff|tbank.?online|credistory|dbankcloud|dbo.?dengi|finuslugi|gazprombank|gazprompay|gpb\.ru|gpmdi\.ru|sbpgpb|gorodpay|mirpayonline|moex\.com|myapelsin|nbki\.ru|nspk\.ru|psbank|psblog|rshb\.ru|sistema.?capital|spvb\.ru|tochka|vtb' \
             community/data/whitelist > /tmp/whitelist_clean
           mv /tmp/whitelist_clean community/data/whitelist
-          echo "Domains remaining in whitelist: $(grep -c '^domain:' community/data/whitelist || true)"
+          echo "Domains in whitelist: $(grep -c '^domain:' community/data/whitelist || true)"
 
       - name: Build geosite.dat
         run: |
@@ -109,4 +91,3 @@ jobs:
       - name: Purge jsDelivr CDN
         run: |
           curl -s "https://purge.jsdelivr.net/gh/${{ github.repository }}@release/release/geosite.dat" || true
-          curl -s "https://purge.jsdelivr.net/gh/${{ github.repository }}@${{ env.DAILY_TAG }}/release/geosite.dat" || true
