@@ -1,0 +1,112 @@
+name: Build geosite
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 5 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      CURL: "curl -fsSL --retry 3 --retry-delay 2"
+    steps:
+      - name: Checkout vmeboost-geosite
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Checkout hydraponique source data
+        uses: actions/checkout@v4
+        with:
+          repository: hydraponique/roscomvpn-geosite
+          path: upstream
+          fetch-depth: 1
+
+      - name: Checkout geosite builder
+        uses: actions/checkout@v4
+        with:
+          repository: v2fly/domain-list-community
+          path: community
+          fetch-depth: 1
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: community/go.mod
+          cache: true
+          cache-dependency-path: community/go.sum
+
+      - name: Copy and filter data
+        run: |
+          set -euo pipefail
+          mkdir -p community/data
+          cp -a upstream/data/. community/data/
+
+          # Удаляем банковские домены из whitelist
+          grep -vE \
+            'alfa.?bank|alfabank|alfafinance|alfaleasing|alfaprivate|alfafx|alfafuture|investalfa|alformacap|'\
+'baltbank|beta.?bank|banka.?ui|bankline|banki\.ru|'\
+'cdn.?tinkoff|tbank.?online|'\
+'credistory|dbankcloud|dbo.?dengi|'\
+'finuslugi|'\
+'gazprombank|gazprompay|gpb\.ru|gpmdi\.ru|sbpgpb|'\
+'gorodpay|mirpayonline|'\
+'moex\.com|'\
+'myapelsin|'\
+'nbki\.ru|nspk\.ru|'\
+'psbank|psblog|'\
+'rshb\.ru|'\
+'sistema.?capital|spvb\.ru|'\
+'tochka\.com|tochka.?tech|'\
+'vtb' \
+            community/data/whitelist > /tmp/whitelist_clean
+          mv /tmp/whitelist_clean community/data/whitelist
+          echo "Domains remaining in whitelist: $(grep -c '^domain:' community/data/whitelist || true)"
+
+      - name: Build geosite.dat
+        run: |
+          set -euo pipefail
+          pushd community
+          go run ./ -outputdir=/tmp/out
+          popd
+          test -s /tmp/out/dlc.dat
+          cp /tmp/out/dlc.dat ./geosite.dat
+
+      - name: Set tag
+        run: echo "DAILY_TAG=$(date +%Y%m%d%H%M)" >> $GITHUB_ENV
+
+      - name: Create git tag
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/tags/${process.env.DAILY_TAG}`,
+              sha: context.sha
+            })
+
+      - name: Push to release branch
+        run: |
+          set -euo pipefail
+          rm -rf release && mkdir -p release
+          cp geosite.dat release/
+          sha256sum release/geosite.dat > release/geosite.dat.sha256
+          cd release
+          git init
+          git config user.name "vmeboost-bot"
+          git config user.email "vmeboost@users.noreply.github.com"
+          git checkout -b release
+          git add -A
+          git commit -m "Release ${{ env.DAILY_TAG }}"
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+          git push -f origin release
+
+      - name: Purge jsDelivr CDN
+        run: |
+          curl -s "https://purge.jsdelivr.net/gh/${{ github.repository }}@release/release/geosite.dat" || true
+          curl -s "https://purge.jsdelivr.net/gh/${{ github.repository }}@${{ env.DAILY_TAG }}/release/geosite.dat" || true
